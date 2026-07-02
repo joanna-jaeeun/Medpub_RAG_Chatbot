@@ -50,7 +50,7 @@ This project is a RAG-based medical question-answering system that uses only Pub
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/medpub-crag-chatbot.git
+git clone https://github.com/your-username/medpub-crag-chatbot.git](https://github.com/joanna-jaeeun/Medpub_RAG_Chatbot.git
 cd medpub-crag-chatbot
 ```
 
