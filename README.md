@@ -45,6 +45,50 @@ This project is a RAG-based medical question-answering system that uses only Pub
 | **Frontend** | Streamlit |
 </p>
 
+## How to run
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/medpub-crag-chatbot.git
+cd medpub-crag-chatbot
+```
+
+### 2. Create a Conda Environment
+
+```bash
+conda create -n medpub python=3.11
+conda activate medpub
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install streamlit langchain langgraph faiss-cpu biopython \
+    langchain-openai langchain-community \
+    langchain-text-splitters python-dotenv
+```
+
+> Or simply install all dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Set Up the API Key
+
+Create a `.env` file in the project root and add:
+
+```env
+OPENAI_API_KEY=your_api_key
+```
+
+### 5. Run the Application
+
+```bash
+streamlit run app.py
+```
+
 
 ## References
 - [Learn RAG From Scratch – Python AI Tutorial from a LangChain Engineer](https://youtu.be/sVcwVQRHIc8?si=oqVIXYPKKFFO18wy)
