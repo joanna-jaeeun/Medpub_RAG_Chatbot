@@ -90,7 +90,7 @@ streamlit run app.py
 ```
 
 ## Chatbot
-![test](assets/chatbot_example)
+![test](assets/chatbot_example.png)
 
 
 ## References
