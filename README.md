@@ -89,6 +89,9 @@ OPENAI_API_KEY=your_api_key
 streamlit run app.py
 ```
 
+## Chatbot
+![test](assets/chatbot_example)
+
 
 ## References
 - [Learn RAG From Scratch – Python AI Tutorial from a LangChain Engineer](https://youtu.be/sVcwVQRHIc8?si=oqVIXYPKKFFO18wy)
