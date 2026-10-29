@@ -1,6 +1,7 @@
 .env
 .venv/
 venv/
+medpub/
 __pycache__/
 *.pyc
 .pytest_cache/
