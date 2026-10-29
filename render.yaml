@@ -1,0 +1,27 @@
+# Render Blueprint: two free web services from the same Docker image.
+# After the first deploy, set API_URL on the UI service to the API's public URL,
+# and in each service's settings choose "Auto-Deploy: After CI checks pass".
+services:
+  - type: web
+    name: medpub-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ENTREZ_EMAIL
+        sync: false
+      - key: APP_ACCESS_CODE
+        sync: false
+      - key: DAILY_LIMIT
+        value: "30"
+
+  - type: web
+    name: medpub-ui
+    runtime: docker
+    plan: free
+    dockerCommand: sh -c "streamlit run app.py --server.port $PORT --server.address 0.0.0.0"
+    envVars:
+      - key: API_URL
+        sync: false

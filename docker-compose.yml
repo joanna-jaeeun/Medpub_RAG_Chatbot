@@ -1,0 +1,20 @@
+# Local run of both services:  docker compose up --build
+# API docs: http://localhost:8000/docs   UI: http://localhost:8501
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+
+  ui:
+    build: .
+    command: ["sh", "-c", "streamlit run app.py --server.port 8501 --server.address 0.0.0.0"]
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
