@@ -1,180 +1,80 @@
-# MedPub RAG Answering Chatbot
+# PubMed Evidence Q&A Chatbot (Corrective RAG)
 
 ![CI](https://github.com/joanna-jaeeun/Medpub_RAG_Chatbot/actions/workflows/ci.yml/badge.svg)
 
-## Project Summary
-This project is a RAG-based medical question-answering system that uses only PubMed papers to reduce AI hallucinations and provide reliable medical information. Every answer includes the PMID, author, and publication year as evidence. It also uses a CRAG (Corrective RAG) pipeline to evaluate the relevance of retrieved papers and automatically re-search when irrelevant results are found. In addition, the system improves retrieval accuracy by applying multiple query strategies such as Multi-Query, HyDE, and Step-Back.
+**Live demo:** https://medpub-ui.onrender.com (access code available on request)
 
-<<<<<<< HEAD
-The pipeline runs as a **FastAPI service** with a **Streamlit front end**, packaged in **Docker**, tested offline in **GitHub Actions**, and deployable to Render.
-
+> The demo runs on Render's free tier, so the first request after a quiet period can take about a minute while the server wakes up.
+>
 > Not medical advice. Answers summarise published literature.
+
+![Chatbot example](assets/chatbot_example.png)
+
+## What it does
+
+Ask a medical question and the chatbot searches **PubMed in real time**, keeps only the papers that are relevant, and answers **using those papers alone**. Every claim cites its source (PMID, first author, year). When the evidence is not there, it says **"Insufficient evidence"** instead of guessing.
+
+Under the hood it is a **Corrective RAG (CRAG)** pipeline built with LangGraph. An LLM grades each retrieved excerpt; if the evidence is weak, the query is rewritten and PubMed is searched again. Four query strategies (Original, Multi-Query, HyDE, Step-Back) can be compared from the UI.
 
 ## Architecture
 
 ```
-Streamlit UI (app.py)  ──HTTP──▶  FastAPI (api/main.py)  ──▶  medpub/ pipeline
+Streamlit UI (app.py)  ──HTTP──▶  FastAPI (api/main.py)  ──▶  medpub/ package
                                    /health, /ask              PubMed → FAISS → CRAG → answer
-                                   access code, daily limit
+                                   validation, access code,
+                                   daily limit
 ```
+
+The UI holds no API keys and no RAG logic; it only calls the API. The RAG logic lives in a plain Python package, so the API, the tests and future evaluation scripts all call the same `answer_question()` function.
 
 | Path | Role |
 |------|------|
 | `medpub/pubmed.py` | PubMed search through Entrez |
-| `medpub/indexing.py` | Chunking and per-question FAISS index |
+| `medpub/indexing.py` | Chunking and a per-question FAISS index |
 | `medpub/queries.py` | Original, Multi-Query, HyDE, Step-Back |
-| `medpub/crag.py` | LangGraph CRAG graph (grade → rewrite → re-search) |
-| `medpub/generation.py` | Grounded answer with PMID citations |
+| `medpub/crag.py` | LangGraph CRAG graph (retrieve → grade → rewrite → re-search → generate) |
+| `medpub/generation.py` | Grounded answer with PMID citations and citation validation |
 | `medpub/pipeline.py` | `answer_question()`: the single entry point |
+| `medpub/config.py` | Settings from environment variables |
 | `api/main.py` | FastAPI service |
 | `app.py` | Streamlit UI calling the API |
 | `tests/` | Offline tests (fake PubMed, fake LLM, fake embeddings) |
+| `MedPub Rag Answering Chatbot.ipynb` | Original exploration notebook |
 
-## Flow
-![test](assets/chatbot_flow.png)
+## How a question is answered
 
-## Methodology
-- Step 1. PubMed Search
-  - Search PubMed in real time using the Entrez API. Retrieve relevant papers based on the user's question.
+![Flow](assets/chatbot_flow.png)
 
-- Step 2. Query Strategy Select one of the following retrieval strategies to improve search quality:
-  - Original – Search using the original question.
-  - Multi-Query – Generate multiple query variations with an LLM (the original question is searched too).
-  - HyDE – Generate a hypothetical document to improve semantic retrieval.
-  - Step-Back – Reformulate the question into a higher-level concept before searching.
+1. **PubMed search**: fetch up to N papers for the question within the chosen years (Entrez API).
+2. **Indexing**: split abstracts into chunks, embed them with OpenAI embeddings and build an in-memory FAISS index for this question.
+3. **Retrieval**: get the top-5 chunks using the selected query strategy.
+   - *Original*: the question as asked
+   - *Multi-Query*: the question plus LLM-generated rephrasings
+   - *HyDE*: search with a hypothetical answer passage
+   - *Step-Back*: search with a broader version of the question
+4. **Grading (CRAG)**: an LLM judges each chunk as relevant or not.
+5. **Correction**: if some chunks are irrelevant, rewrite the query, search PubMed again, and **grade the new chunks too**. The rewritten query is used only for searching; the answer is always written for the user's original question.
+6. **Answer**: every chunk is sent to the LLM with a `[PMID | first author | year]` header, and the model may cite only PMIDs that appear in those headers.
+7. **Citation check**: PMIDs in the answer are compared with the retrieved papers. Any that were not retrieved are returned as `invalid_citations`, logged, and shown as a warning in the UI.
 
-- Step 3. Document Indexing
-  - Split retrieved abstracts into chunks. Convert chunks into embeddings. Store embeddings in a FAISS vector database.
-=======
-## Flow
-![test](assets/chatbot_flow.png)
+## Lessons from testing the live app
 
-## Methodology 
-- Step 1. PubMed Search
-  - Search PubMed in real time using the Entrez API. Retrieve relevant papers based on the user's question.
-  
-- Step 2. Query Strategy Select one of the following retrieval strategies to improve search quality:
-  - Original – Search using the original question.
-  - Multi-Query – Generate multiple query variations with an LLM.
-  - HyDE – Generate a hypothetical document to improve semantic retrieval.
-  - Step-Back – Reformulate the question into a higher-level concept before searching.
-    
-- Step 3. Document Indexing
-  - Split retrieved abstracts into chunks. Convert chunks into embeddings. Store embeddings in a FAISS vector database.
-  
-- Step 4. Retrieval
-  - Perform similarity search on the FAISS index. Retrieve the most relevant documents.
+- **Fabricated citations.** Early answers cited PMIDs such as `12345678 (Smith et al.)` that do not exist. The cause: only the first chunk of each abstract contains the PMID, so the model saw excerpts with no source and invented one. Fix: a source header on every chunk, a stricter prompt, and an automatic check of cited PMIDs against retrieved papers.
+- **Unchecked re-search results.** Papers from the corrective search skipped grading, so off-topic papers (e.g. veterinary melanoma) reached the answer. They are now graded like the first batch.
+- **Retrieval settings matter.** For *"Does metformin reduce cardiovascular events in type 2 diabetes?"*, the default settings (Original, 10 papers, 2020+) returned "Insufficient evidence", while Multi-Query with 30 papers from 2010 found three relevant papers including a meta-analysis. This motivates the evaluation set below.
 
-- Step 5. Document Grading (CRAG)
-  - Evaluate the relevance of retrieved documents using an LLM. Trigger a new search if the retrieved documents are insufficient or irrelevant.
+## Run locally
 
-- Step 6. Query Refinement
-  - Rewrite the query based on the grading results. Re-search PubMed and retrieve improved documents when necessary.
-
-- Step 7. Answer Generation
-  - Generate the final answer using the retrieved evidence. Include PMID, author, and publication year for every reference.
-  - Return "Insufficient evidence" when reliable evidence is unavailable to reduce hallucinations.
-
-
-## Tech Stack
-
-| Category | Technology |
-|----------|------------|
-| **LLM** | GPT-4o-mini (OpenAI) |
-| **Framework** | LangChain, LangGraph (CRAG) |
-| **Vector Database** | FAISS |
-| **Embeddings** | OpenAI Embeddings |
-| **Data Source** | PubMed API (Entrez) |
-| **Frontend** | Streamlit |
-</p>
-
-## How to run
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/your-username/medpub-crag-chatbot.git](https://github.com/joanna-jaeeun/Medpub_RAG_Chatbot.git
-cd medpub-crag-chatbot
-```
-
-### 2. Create a Conda Environment
-
-```bash
-conda create -n medpub python=3.11
-conda activate medpub
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install streamlit langchain langgraph faiss-cpu biopython \
-    langchain-openai langchain-community \
-    langchain-text-splitters python-dotenv
-```
-
-> Or simply install all dependencies with:
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Set Up the API Key
-
-Create a `.env` file in the project root and add:
-
-```env
-OPENAI_API_KEY=your_api_key
-```
-
-### 5. Run the Application
-
-```bash
-streamlit run app.py
-```
-
-## Chatbot
-![test](assets/chatbot_example.png)
->>>>>>> 1b1d89220ee180191ad62eb99962ee68fd47be55
-
-- Step 4. Retrieval
-  - Perform similarity search on the FAISS index. Retrieve the most relevant documents.
-
-<<<<<<< HEAD
-- Step 5. Document Grading (CRAG)
-  - Evaluate the relevance of retrieved documents using an LLM. Trigger a new search if the retrieved documents are insufficient or irrelevant.
-
-- Step 6. Query Refinement
-  - Rewrite the query for the corrective PubMed search. The final answer is still written for the user's original question.
-
-- Step 7. Answer Generation
-  - Generate the final answer using the retrieved evidence. Include PMID, author, and publication year for every reference.
-  - Return "Insufficient evidence" when reliable evidence is unavailable to reduce hallucinations.
-
-## Tech Stack
-
-| Category | Technology |
-|----------|------------|
-| **LLM** | GPT-4o-mini (OpenAI) |
-| **Framework** | LangChain, LangGraph (CRAG) |
-| **Vector Database** | FAISS |
-| **Embeddings** | OpenAI Embeddings |
-| **Data Source** | PubMed API (Entrez) |
-| **API** | FastAPI, Uvicorn |
-| **Frontend** | Streamlit |
-| **Ops** | Docker, GitHub Actions, Render |
-
-## How to run
-
-### 1. Clone and install
+### 1. Install
 
 ```bash
 git clone https://github.com/joanna-jaeeun/Medpub_RAG_Chatbot.git
 cd Medpub_RAG_Chatbot
-python3.11 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Set environment variables
+### 2. Environment variables
 
 ```bash
 cp .env.example .env    # then fill in OPENAI_API_KEY and ENTREZ_EMAIL
@@ -184,20 +84,20 @@ cp .env.example .env    # then fill in OPENAI_API_KEY and ENTREZ_EMAIL
 |----------|---------|
 | `OPENAI_API_KEY` | Required for embeddings, grading and answers |
 | `ENTREZ_EMAIL` | NCBI asks Entrez clients to identify themselves |
-| `APP_ACCESS_CODE` | Optional. If set, `/ask` needs header `X-Access-Code` |
+| `APP_ACCESS_CODE` | Optional. If set, `/ask` needs the header `X-Access-Code` |
 | `DAILY_LIMIT` | Questions per client IP per day (default 30, 0 = unlimited) |
 
 ### 3. Start the API and the UI
 
 ```bash
-uvicorn api.main:app --reload            # http://localhost:8000/docs
-API_URL=http://localhost:8000 streamlit run app.py
+uvicorn api.main:app --reload                        # http://localhost:8000/docs
+API_URL=http://localhost:8000 streamlit run app.py   # in a second terminal
 ```
 
 Or both with Docker:
 
 ```bash
-docker compose up --build                # API :8000, UI :8501
+docker compose up --build                            # API :8000, UI :8501
 ```
 
 ## API
@@ -206,18 +106,19 @@ docker compose up --build                # API :8000, UI :8501
 curl -X POST localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "Does metformin reduce cardiovascular events in type 2 diabetes?",
-       "query_method": "multiquery", "max_results": 10, "start_year": 2020}'
+       "query_method": "multiquery", "max_results": 30, "start_year": 2010}'
 ```
 
-Response:
+Response (abridged):
 
 ```json
 {
-  "answer": "… (PMID 12345678, Smith et al., 2022) …",
-  "sources": [{"pmid": "12345678", "title": "…", "authors": "…", "journal": "…", "year": "2022", "abstract": "…"}],
-  "nodes": ["retrieve", "grade_documents", "generate"],
-  "n_papers": 10,
-  "latency_s": 8.4
+  "answer": "… (PMID: 30672083, Charytan et al., 2019) …",
+  "sources": [{"pmid": "30672083", "title": "…", "authors": "…", "journal": "…", "year": "2019", "abstract": "…"}],
+  "nodes": ["retrieve", "grade_documents", "transform_query", "research_again", "generate"],
+  "n_papers": 30,
+  "latency_s": 17.8,
+  "invalid_citations": []
 }
 ```
 
@@ -229,35 +130,43 @@ Response:
 | 502 | PubMed unavailable |
 | 503 | Server has no OpenAI key |
 
-## Tests and CI
+## Tests
 
 ```bash
 pytest -q
 ```
 
-The tests replace PubMed, OpenAI and embeddings with fakes, so they run offline in about a second and need no API key. They cover PubMed record parsing, chunking, every query strategy, both CRAG paths (relevant documents → generate; irrelevant → rewrite → re-search → generate), and the API's validation, access code and rate limit.
+The tests replace PubMed, OpenAI and the embeddings with fakes, so they run offline in about a second and need no API key. They cover PubMed parsing, chunking, every query strategy, both CRAG paths (relevant → answer; irrelevant → rewrite → re-search → answer), grading of re-searched papers, citation headers and fabricated-citation detection, and the API's validation, access code and rate limit.
 
 GitHub Actions runs the tests on every push, then builds the Docker image and checks `/health` in the running container.
 
-## Deploy (Render)
+## Deployment (Render)
 
-1. Push this repository to GitHub.
-2. In Render: **New → Blueprint**, select the repository. `render.yaml` creates `medpub-api` and `medpub-ui`.
-3. Set `OPENAI_API_KEY`, `ENTREZ_EMAIL` (and optionally `APP_ACCESS_CODE`) on `medpub-api`.
-4. Set `API_URL` on `medpub-ui` to the API's public URL.
-5. In each service's settings, set **Auto-Deploy** to deploy after CI checks pass.
+`render.yaml` defines two free web services built from the same Docker image:
 
-Free instances sleep when idle, so the first request after a pause can take a while.
+- `medpub-api`: FastAPI. Needs `OPENAI_API_KEY`, `ENTREZ_EMAIL` and optionally `APP_ACCESS_CODE`.
+- `medpub-ui`: Streamlit. Needs `API_URL`, the API's public URL.
 
-## Chatbot
-![test](assets/chatbot_example.png)
+In Render: **New → Blueprint**, select this repository, fill in the variables and deploy.
+
+## Known limitations
+
+- Answers use abstracts only, not full texts.
+- A new FAISS index is built for every question: always up to date, but each question pays for embedding (about 15–25 s per answer).
+- The corrective search triggers whenever any retrieved chunk is judged irrelevant, so most questions re-search.
+- The daily limit is kept in memory, so it resets on restart and is not shared between instances.
 
 ## Next steps
-- Evaluation set (≈20 questions with expected PMIDs and key points): retrieval hit rate / MRR in CI, faithfulness and answer relevancy before merge
-- Structured answers: short summary plus an evidence table (study type, population, finding)
-- Compare Original, Multi-Query, HyDE and Step-Back on the same evaluation set
 
-=======
->>>>>>> 1b1d89220ee180191ad62eb99962ee68fd47be55
+- **Evaluation set** (~20 questions with expected PMIDs and key points, including questions with no answer):
+  - retrieval: PubMed recall, Hit@5, MRR
+  - generation: fabricated-citation rate, faithfulness, key-point coverage, correct refusals
+  - compare Original, Multi-Query, HyDE and Step-Back on the same set
+- Tune the re-search threshold using the evaluation results (accuracy vs latency)
+- Show cited papers separately from papers that were retrieved but not cited
+- Structured answers: short summary plus an evidence table (study type, population, finding)
+
 ## References
+
 - [Learn RAG From Scratch – Python AI Tutorial from a LangChain Engineer](https://youtu.be/sVcwVQRHIc8?si=oqVIXYPKKFFO18wy)
+- [Corrective Retrieval Augmented Generation (Yan et al., 2024)](https://arxiv.org/abs/2401.15884)
