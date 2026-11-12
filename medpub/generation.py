@@ -23,9 +23,15 @@ PMID_PATTERN = re.compile(r"PMID[:\s]*(\d{4,9})")
 
 
 def first_author(authors: str) -> str:
-    """'Smith J, Lee K' -> 'Smith'."""
+    """Surname of the first author: 'Smith J, Lee K' -> 'Smith', 'de Oliveira AB' -> 'de Oliveira'."""
     first = (authors or "").split(",")[0].strip()
-    return first.split(" ")[0] if first else "Unknown"
+    if not first:
+        return "Unknown"
+    parts = first.split(" ")
+    # PubMed lists authors as 'Surname Initials'; drop the initials
+    if len(parts) > 1 and parts[-1].isupper() and len(parts[-1]) <= 3:
+        parts = parts[:-1]
+    return " ".join(parts)
 
 
 def format_context(docs) -> str:
