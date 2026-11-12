@@ -90,3 +90,25 @@ def test_pipeline_reports_no_invalid_citations_for_grounded_answer(settings):
     out = answer_question(AskParams(question="metformin heart"), settings,
                           fake_components(grade=lambda q, d: True))
     assert out["invalid_citations"] == []
+
+
+
+def test_research_results_are_graded_too(settings):
+    from conftest import PAPERS
+    # The corrective search returns an off-topic paper (statins); the grader rejects it
+    search = FakeSearch(second=PAPERS[1:2])
+    out = answer_question(AskParams(question="metformin heart"), settings,
+                          fake_components(grade=lambda q, d: "Metformin" in d, search=search))
+    assert "research_again" in out["nodes"]
+    assert {s["pmid"] for s in out["sources"]} == {"111"}
+
+
+@pytest.mark.parametrize("authors, expected", [
+    ("Dzwierzynski WW", "Dzwierzynski"),
+    ("de Oliveira AB", "de Oliveira"),
+    ("Smith", "Smith"),
+    ("", "Unknown"),
+])
+def test_first_author_keeps_multiword_surnames(authors, expected):
+    from medpub.generation import first_author
+    assert first_author(authors) == expected

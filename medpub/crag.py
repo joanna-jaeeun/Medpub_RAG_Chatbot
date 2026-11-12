@@ -71,8 +71,11 @@ def build_crag_app(retriever, *, query_llm, answer_llm, rewrite_llm, grade: Call
         return {"search_query": rewriter.invoke({"question": state["question"]}).strip()}
 
     def research_again(state: GraphState):
-        extra = research(state["search_query"])
-        return {"documents": list(state["documents"]) + list(extra)}
+        # Grade the new documents too, so off-topic papers from the corrective
+        # search do not reach the answer ungraded
+        extra = [d for d in research(state["search_query"])
+                 if grade(state["question"], d.page_content)]
+        return {"documents": list(state["documents"]) + extra}
 
     def generate(state: GraphState):
         answer, sources = generate_answer(state["question"], state["documents"], answer_llm)
