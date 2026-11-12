@@ -107,6 +107,9 @@ with tab1:
                 st.markdown(result["answer"])
                 st.caption(f"Nodes: {' → '.join(result['nodes'])} · {result['n_papers']} papers · "
                            f"{result['latency_s']}s")
+                if result.get("invalid_citations"):
+                    st.warning("⚠️ This answer cites PMIDs that were not retrieved: "
+                               + ", ".join(result["invalid_citations"]) + ". Treat those claims with caution.")
                 show_sources(result["sources"], key_prefix=f"new{len(st.session_state.messages)}")
                 st.session_state.messages.append(
                     {"role": "assistant", "content": result["answer"], "sources": result["sources"]})

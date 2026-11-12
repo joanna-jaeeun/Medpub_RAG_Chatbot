@@ -8,6 +8,7 @@ from typing import Callable, Dict, List, Optional
 
 from .config import Settings
 from .crag import build_crag_app, llm_grader
+from .generation import invalid_citations      # ← add
 from .indexing import build_faiss
 from .pubmed import search_pubmed
 
@@ -63,7 +64,7 @@ def answer_question(params: AskParams, settings: Settings,
     papers = search(params.question)
     if not papers:
         return {"answer": "Insufficient evidence: PubMed returned no papers for this question.",
-                "sources": [], "nodes": [], "n_papers": 0,
+                "sources": [], "nodes": [], "n_papers": 0, "invalid_citations": [],
                 "latency_s": round(time.perf_counter() - t0, 2)}
 
     retriever = build_faiss(papers, c.embeddings).as_retriever(search_kwargs={"k": TOP_K})
@@ -83,6 +84,10 @@ def answer_question(params: AskParams, settings: Settings,
             nodes.append(name)
             final.update(update or {})
 
-    return {"answer": final.get("generation", ""), "sources": final.get("sources", []),
+    answer, sources = final.get("generation", ""), final.get("sources", [])
+    
+    return {"answer": answer, "sources": sources,
             "nodes": nodes, "n_papers": len(papers),
+            # Citations to PMIDs that were never retrieved: should always be empty
+            "invalid_citations": invalid_citations(answer, sources),
             "latency_s": round(time.perf_counter() - t0, 2)}

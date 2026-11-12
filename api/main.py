@@ -58,6 +58,8 @@ class AskResponse(BaseModel):
     nodes: List[str] = Field(description="CRAG nodes that ran, in order")
     n_papers: int
     latency_s: float
+    invalid_citations: List[str] = Field(default_factory=list,
+                                         description="Cited PMIDs that were not retrieved (should be empty)")
 
 
 # ---------------------------------------------------------------- cost guard
@@ -127,6 +129,8 @@ def ask(body: AskRequest, settings: Settings = Depends(guard),
     except Exception:
         log.exception("ask failed")
         raise HTTPException(status_code=500, detail="Internal error while answering")
+    if result.get("invalid_citations"):
+        log.warning("fabricated citations: %s", ",".join(result["invalid_citations"]))
     log.info("ask method=%s papers=%s latency=%.2fs nodes=%s", body.query_method,
              result["n_papers"], result["latency_s"], ",".join(result["nodes"]))
     return result
