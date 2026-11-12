@@ -72,3 +72,21 @@ def test_no_papers_returns_insufficient_evidence(settings):
     comps = fake_components(search=lambda **kw: [])
     out = answer_question(AskParams(question="unknown topic"), settings, comps)
     assert out["n_papers"] == 0 and out["answer"].startswith("Insufficient evidence")
+
+def test_context_tags_every_chunk_with_its_paper():
+    from medpub.generation import format_context
+    docs = [Document(page_content="later part of the abstract",
+                     metadata={"pmid": "34503715", "authors": "Dzwierzynski WW, Other A", "year": "2021"})]
+    assert format_context(docs).startswith("[PMID: 34503715 | Dzwierzynski | 2021]")
+
+
+def test_invalid_citations_flags_pmids_not_retrieved():
+    from medpub.generation import invalid_citations
+    answer = "Real (PMID: 111, Doe et al., 2023). Fake (PMID: 12345678, Smith et al., 2023)."
+    assert invalid_citations(answer, [{"pmid": "111"}]) == ["12345678"]
+
+
+def test_pipeline_reports_no_invalid_citations_for_grounded_answer(settings):
+    out = answer_question(AskParams(question="metformin heart"), settings,
+                          fake_components(grade=lambda q, d: True))
+    assert out["invalid_citations"] == []
