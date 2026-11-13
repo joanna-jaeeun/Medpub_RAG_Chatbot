@@ -1,4 +1,4 @@
-# PubMed Evidence Q&A Chatbot (Corrective RAG)
+# PubMed-Powered Medical Literature RAG Chatbot
 
 ![CI](https://github.com/joanna-jaeeun/Medpub_RAG_Chatbot/actions/workflows/ci.yml/badge.svg)
 
@@ -8,7 +8,7 @@
 >
 > Not medical advice. Answers summarise published literature.
 
-![Chatbot example](assets/chatbot_example.png)
+![Chatbot example](assets/chatbot_example.jpg)
 
 ## What it does
 
